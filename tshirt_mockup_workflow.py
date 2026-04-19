@@ -60,13 +60,15 @@ POLL_INTERVAL      = 8    # seconds between status checks
 # ---------------------------------------------------------------------------
 
 FRONT_PROMPT = (
-    "Professional fashion editorial photo, t-shirt front view clearly visible, "
+    "Professional fashion editorial photo, t-shirt front view, "
+    "preserve the exact garment design, colors, graphics, logo, and print precisely, "
     "model standing confidently in a modern studio, soft diffused lighting, "
     "pure white background, ultra sharp details, high-end apparel campaign"
 )
 
 BACK_PROMPT = (
-    "Professional fashion editorial photo, t-shirt back view clearly visible, "
+    "Professional fashion editorial photo, t-shirt back view, "
+    "preserve the exact garment design, colors, graphics, logo, and print precisely, "
     "model standing confidently in a modern studio, soft diffused lighting, "
     "pure white background, ultra sharp details, high-end apparel campaign"
 )
@@ -113,23 +115,26 @@ def start_generation(api_key: str, image_url: str, prompt: str,
                      soul_id: str | None) -> str:
     """
     Submit a generation job.
-    - image_url          : CDN URL of the uploaded raw t-shirt image
-    - soul_id            : HiggsField Soul ID — locks the same model in every image
+    - image_url            : CDN URL of the uploaded raw t-shirt image
+    - reference_image_urls : same URL passed again — Soul Mode uses it to reinforce
+                             exact garment design, colors, and print
+    - strength             : 0.35 = stays very close to source (garment consistency)
+    - soul_id              : locks the same model face/body in every image
     - custom_reference_strength: 1.0 = maximum model consistency
-    - strength           : how much to restyle vs. preserve the source (0.55 = balanced)
     """
     payload: dict = {
-        "model":        "higgsfield-soul-image-to-image",
-        "image_url":    image_url,
-        "prompt":       prompt,
-        "strength":     0.55,
-        "aspect_ratio": "1:1",
-        "quality":      "high",
+        "model":                "higgsfield-soul-image-to-image",
+        "image_url":            image_url,
+        "reference_image_urls": [image_url],  # reinforce garment design preservation
+        "prompt":               prompt,
+        "strength":             0.35,          # low = stays close to source garment
+        "aspect_ratio":         "1:1",
+        "quality":              "high",
     }
 
     if soul_id:
         payload["custom_reference_id"]       = soul_id
-        payload["custom_reference_strength"] = 1.0   # max consistency
+        payload["custom_reference_strength"] = 1.0   # max model consistency
 
     resp = requests.post(
         GENERATE_ENDPOINT,
