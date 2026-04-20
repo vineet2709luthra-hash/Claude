@@ -1,0 +1,59 @@
+# ---------------------------------------------------------------
+# T-Shirt Image Workflow — Configuration
+# ---------------------------------------------------------------
+
+# Directory that contains one sub-folder per t-shirt design.
+# Each sub-folder must contain exactly one raw image file.
+#   tshirts/
+#     design_01/
+#       raw.jpg
+#     design_02/
+#       raw.png
+input_dir: "tshirts"
+
+# Root directory where all generated output is saved.
+# A sub-folder matching the design folder name is created automatically.
+output_dir: "output"
+
+# Supported image extensions (case-insensitive).
+image_extensions:
+  - ".jpg"
+  - ".jpeg"
+  - ".png"
+  - ".webp"
+
+# ---------------------------------------------------------------
+# Step 4 — Prompt for the initial garment-on-model generation
+# ---------------------------------------------------------------
+generation_prompt: >
+  A professional fashion model wearing the t-shirt, studio lighting,
+  clean white background, full body shot, high quality, photorealistic
+
+generation_negative_prompt: >
+  blurry, low quality, distorted, watermark, text, logo
+
+# How many base model images to generate per design (step 5)
+num_base_images: 1
+
+# ---------------------------------------------------------------
+# Step 7 — Poses to generate from the base model image
+# ---------------------------------------------------------------
+poses:
+  - "front view, standing straight"
+  - "side view, walking pose"
+  - "back view, standing"
+  - "three-quarter view, casual stance"
+  - "sitting, relaxed pose"
+
+pose_prompt: >
+  Professional fashion photography, studio lighting, clean background,
+  high quality, photorealistic
+
+pose_negative_prompt: >
+  blurry, low quality, distorted, watermark
+
+# ---------------------------------------------------------------
+# API / job settings
+# ---------------------------------------------------------------
+poll_interval_seconds: 5
+job_timeout_seconds: 300
