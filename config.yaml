@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------
+# T-Shirt Image Workflow — Configuration
+# ---------------------------------------------------------------
+
+# Directory that contains one sub-folder per t-shirt design.
+# Each sub-folder must contain exactly one raw image file.
+#   tshirts/
+#     design_01/
+#       raw.jpg
+#     design_02/
+#       raw.png
+input_dir: "tshirts"
+
+# Root directory where all generated output is saved.
+output_dir: "output"
+
+# Supported image extensions (case-insensitive).
+image_extensions:
+  - ".jpg"
+  - ".jpeg"
+  - ".png"
+  - ".webp"
+
+# ---------------------------------------------------------------
+# Step 4/5 — Base model generation (garment on model)
+#
+# application: Higgsfield model path shown in your cloud dashboard.
+#   Known working:  bytedance/seedream/v4/text-to-image
+#   Fashion try-on: check https://cloud.higgsfield.ai for the exact
+#                   application name for Fashion Factory / Outfit Shot.
+# ---------------------------------------------------------------
+base_model:
+  application: "bytedance/seedream/v4/text-to-image"
+  arguments:
+    resolution: "2K"
+    aspect_ratio: "2:3"
+
+generation_prompt: >
+  Professional fashion model wearing an olive green graphic t-shirt with
+  MONARCH print, studio photography, clean white background, full body shot,
+  high quality, photorealistic, sharp details
+
+# ---------------------------------------------------------------
+# Step 7 — Pose variations
+# ---------------------------------------------------------------
+pose_model:
+  application: "bytedance/seedream/v4/text-to-image"
+  arguments:
+    resolution: "2K"
+    aspect_ratio: "2:3"
+
+pose_prompt: >
+  Professional fashion photography, studio lighting, clean white background,
+  high quality, photorealistic, same outfit
+
+poses:
+  - "front view, standing straight, arms at sides"
+  - "side view, walking pose, dynamic"
+  - "back view, standing"
+  - "three-quarter view, casual confident stance"
+  - "sitting on white stool, relaxed pose"
