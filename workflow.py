@@ -11,19 +11,24 @@ Workflow steps
 2. For each design folder, locate the raw t-shirt image
 3. Upload the raw image to Higgsfield
 4. Apply the configured generation prompt
-5. Generate the base model image(s) wearing the t-shirt
+5. Generate the base model image wearing the t-shirt
 6. Download the generated base image and re-upload to Higgsfield
 7. Generate multiple pose variations from the base model image
 8. Save everything into a dedicated output folder for that design
 
+Credentials
+-----------
+Set HF_KEY in your .env file:
+    HF_KEY=<api_key_id>:<api_secret>
+
+Get your credentials from https://cloud.higgsfield.ai
+
 Usage
 -----
-    # Set your API key in the environment or .env file
-    export HIGGSFIELD_API_KEY=your_key_here
-
-    python workflow.py                        # use default config.yaml
+    python workflow.py                          # use default config.yaml
     python workflow.py --config my_config.yaml
     python workflow.py --input tshirts/ --output output/
+    python workflow.py --design monarch         # single design
 """
 
 import argparse
@@ -36,7 +41,8 @@ import yaml
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from higgsfield_client import HiggsfieldClient
+import higgsfield_client as hf
+from hf_utils import download_image
 
 load_dotenv()
 
@@ -49,16 +55,15 @@ log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Config helpers
+# Config
 # ---------------------------------------------------------------------------
 
-def load_config(config_path: str) -> dict:
-    with open(config_path) as fh:
+def load_config(path: str) -> dict:
+    with open(path) as fh:
         return yaml.safe_load(fh)
 
 
-def resolve_paths(cfg: dict, args: argparse.Namespace) -> dict:
-    """CLI flags override config file values."""
+def apply_cli_overrides(cfg: dict, args: argparse.Namespace) -> dict:
     if args.input:
         cfg["input_dir"] = args.input
     if args.output:
@@ -67,42 +72,27 @@ def resolve_paths(cfg: dict, args: argparse.Namespace) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Step 1 — Discover design folders
+# Step 1 — discover design folders
 # ---------------------------------------------------------------------------
 
-def discover_designs(input_dir: str, image_extensions: list[str]) -> list[dict]:
-    """
-    Scan input_dir for sub-folders that contain at least one image file.
-    Returns a list of dicts: {name, folder_path, raw_image_path}
-    """
+def discover_designs(input_dir: str, extensions: list[str]) -> list[dict]:
     root = Path(input_dir)
     if not root.exists():
-        log.error("Input directory does not exist: %s", root)
+        log.error("Input directory not found: %s", root)
         sys.exit(1)
 
-    extensions = {ext.lower() for ext in image_extensions}
+    exts = {e.lower() for e in extensions}
     designs = []
-
     for folder in sorted(root.iterdir()):
         if not folder.is_dir():
             continue
-        images = [
-            f for f in sorted(folder.iterdir())
-            if f.is_file() and f.suffix.lower() in extensions
-        ]
+        images = [f for f in sorted(folder.iterdir()) if f.is_file() and f.suffix.lower() in exts]
         if not images:
-            log.warning("Skipping '%s' — no image found", folder.name)
+            log.warning("Skipping '%s' — no image file found", folder.name)
             continue
         if len(images) > 1:
-            log.warning(
-                "Multiple images in '%s'; using first: %s",
-                folder.name, images[0].name,
-            )
-        designs.append({
-            "name": folder.name,
-            "folder_path": folder,
-            "raw_image_path": images[0],
-        })
+            log.warning("Multiple images in '%s'; using: %s", folder.name, images[0].name)
+        designs.append({"name": folder.name, "raw_image": images[0]})
 
     log.info("Found %d design folder(s) in '%s'", len(designs), input_dir)
     return designs
@@ -112,84 +102,81 @@ def discover_designs(input_dir: str, image_extensions: list[str]) -> list[dict]:
 # Per-design pipeline
 # ---------------------------------------------------------------------------
 
-def process_design(design: dict, cfg: dict, client: HiggsfieldClient) -> None:
+def process_design(design: dict, cfg: dict) -> None:
     name = design["name"]
-    raw_image = design["raw_image_path"]
-    output_root = Path(cfg["output_dir"]) / name
-    output_root.mkdir(parents=True, exist_ok=True)
+    raw_image: Path = design["raw_image"]
+    output_dir = Path(cfg["output_dir"]) / name
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    log.info("━━━ Processing design: %s ━━━", name)
+    log.info("━━━  %s  ━━━", name)
 
-    # ── Step 2 already done (raw_image_path resolved in discover_designs) ──
+    # ── Step 3 — upload raw garment image ─────────────────────────────────
+    log.info("[%s] Step 3 — Uploading raw t-shirt image…", name)
+    garment_url = hf.upload_file(str(raw_image))
+    log.info("[%s] Garment URL: %s", name, garment_url)
 
-    # ── Step 3 — Upload raw t-shirt image ──────────────────────────────────
-    log.info("[%s] Step 3 — Uploading raw image: %s", name, raw_image.name)
-    garment_asset_id = client.upload_image(str(raw_image))
-    log.info("[%s] Uploaded garment asset_id=%s", name, garment_asset_id)
+    # ── Step 4 & 5 — generate base model image ────────────────────────────
+    log.info("[%s] Step 4/5 — Generating base model image (may take ~60s)…", name)
 
-    # ── Step 4 & 5 — Generate base model image ─────────────────────────────
-    log.info("[%s] Step 4/5 — Generating base model image…", name)
-    job_id = client.generate_model_with_tshirt(
-        garment_asset_id=garment_asset_id,
-        prompt=cfg["generation_prompt"],
-        negative_prompt=cfg.get("generation_negative_prompt", ""),
-        num_images=cfg.get("num_base_images", 1),
+    base_model_cfg = cfg["base_model"]
+    result = hf.subscribe(
+        base_model_cfg["application"],
+        arguments={
+            **base_model_cfg.get("arguments", {}),
+            "prompt": cfg["generation_prompt"],
+            "image_url": garment_url,
+        },
+        on_queue_update=lambda s: log.info("[%s] Status: %s", name, type(s).__name__),
     )
-    log.info("[%s] Generation job submitted: %s", name, job_id)
-    base_urls = client.wait_for_job(
-        job_id,
-        poll_interval=cfg.get("poll_interval_seconds", 5),
-        timeout=cfg.get("job_timeout_seconds", 300),
-    )
-    log.info("[%s] Base image(s) ready (%d result(s))", name, len(base_urls))
 
-    # ── Step 6 — Download base image & re-upload ───────────────────────────
-    base_images_uploaded = []
+    base_urls = _extract_urls(result)
+    log.info("[%s] Base image(s) ready — %d result(s)", name, len(base_urls))
+
+    # ── Step 6 — download base image and re-upload ────────────────────────
+    base_uploaded_urls = []
     for idx, url in enumerate(base_urls):
-        local_name = f"base_model_{idx + 1}{_ext_from_url(url)}"
-        local_path = output_root / local_name
-        log.info("[%s] Step 6 — Downloading base image → %s", name, local_name)
-        client.download_image(url, str(local_path))
+        local_name = f"base_model_{idx + 1}{_ext(url)}"
+        local_path = output_dir / local_name
+        log.info("[%s] Step 6 — Downloading → %s", name, local_name)
+        download_image(url, str(local_path))
 
         log.info("[%s] Re-uploading base image for pose generation…", name)
-        model_asset_id = client.upload_image(str(local_path))
-        base_images_uploaded.append(model_asset_id)
-        log.info("[%s] Re-uploaded as asset_id=%s", name, model_asset_id)
+        reuploaded_url = hf.upload_file(str(local_path))
+        base_uploaded_urls.append(reuploaded_url)
+        log.info("[%s] Re-upload done: %s", name, reuploaded_url)
 
-    # ── Step 7 — Generate pose variations ─────────────────────────────────
-    poses = cfg.get("poses", [])
+    # ── Step 7 & 8 — generate and save pose variations ────────────────────
+    poses: list[str] = cfg.get("poses", [])
     if not poses:
-        log.warning("[%s] No poses configured — skipping pose generation", name)
+        log.warning("[%s] No poses configured — skipping pose step", name)
         return
 
-    for base_idx, model_asset_id in enumerate(base_images_uploaded):
-        log.info(
-            "[%s] Step 7 — Generating %d pose(s) from base image %d…",
-            name, len(poses), base_idx + 1,
-        )
-        pose_job_id = client.generate_poses(
-            model_asset_id=model_asset_id,
-            poses=poses,
-            prompt=cfg.get("pose_prompt", ""),
-            negative_prompt=cfg.get("pose_negative_prompt", ""),
-        )
-        log.info("[%s] Pose job submitted: %s", name, pose_job_id)
-        pose_urls = client.wait_for_job(
-            pose_job_id,
-            poll_interval=cfg.get("poll_interval_seconds", 5),
-            timeout=cfg.get("job_timeout_seconds", 300),
-        )
+    pose_model_cfg = cfg["pose_model"]
 
-        # ── Step 8 — Save pose images into design folder ───────────────────
-        log.info("[%s] Step 8 — Saving %d pose image(s)…", name, len(pose_urls))
-        for pose_idx, url in enumerate(pose_urls):
-            pose_label = _safe_filename(poses[pose_idx]) if pose_idx < len(poses) else f"pose_{pose_idx + 1}"
-            file_name = f"pose_{pose_idx + 1}_{pose_label}{_ext_from_url(url)}"
-            dest = output_root / file_name
-            client.download_image(url, str(dest))
-            log.info("[%s] Saved: %s", name, dest.relative_to(Path(cfg["output_dir"]).parent))
+    for base_idx, model_url in enumerate(base_uploaded_urls):
+        log.info("[%s] Step 7 — Generating %d pose(s) from base image %d…", name, len(poses), base_idx + 1)
 
-    log.info("[%s] Done — output folder: %s", name, output_root)
+        for pose_idx, pose in enumerate(poses):
+            log.info("[%s]   Pose %d/%d: %s", name, pose_idx + 1, len(poses), pose)
+            pose_result = hf.subscribe(
+                pose_model_cfg["application"],
+                arguments={
+                    **pose_model_cfg.get("arguments", {}),
+                    "image_url": model_url,
+                    "prompt": f"{cfg.get('pose_prompt', '')} {pose}".strip(),
+                },
+                on_queue_update=lambda s: log.info("[%s]   Status: %s", name, type(s).__name__),
+            )
+
+            pose_urls = _extract_urls(pose_result)
+            for img_idx, url in enumerate(pose_urls):
+                label = _safe_name(pose)
+                filename = f"pose_{pose_idx + 1}_{label}{_ext(url)}"
+                dest = output_dir / filename
+                download_image(url, str(dest))
+                log.info("[%s] Step 8 — Saved: %s", name, dest)
+
+    log.info("[%s] Done. Output folder: %s", name, output_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -197,37 +184,28 @@ def process_design(design: dict, cfg: dict, client: HiggsfieldClient) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Automated t-shirt image workflow using Higgsfield AI"
-    )
-    parser.add_argument("--config", default="config.yaml", help="Path to config file")
-    parser.add_argument("--input", help="Override input_dir from config")
-    parser.add_argument("--output", help="Override output_dir from config")
-    parser.add_argument(
-        "--design",
-        help="Process only this design folder name (skip others)",
-    )
+    parser = argparse.ArgumentParser(description="T-shirt image workflow via Higgsfield AI")
+    parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--input", help="Override input_dir")
+    parser.add_argument("--output", help="Override output_dir")
+    parser.add_argument("--design", help="Process only this design folder name")
     args = parser.parse_args()
 
-    cfg = resolve_paths(load_config(args.config), args)
-
-    api_key = os.getenv("HIGGSFIELD_API_KEY")
-    if not api_key:
+    if not os.getenv("HF_KEY"):
         log.error(
-            "HIGGSFIELD_API_KEY environment variable not set. "
-            "Add it to your .env file or export it before running."
+            "HF_KEY is not set.\n"
+            "Add to your .env file:  HF_KEY=<api_key_id>:<api_secret>\n"
+            "Get credentials from:   https://cloud.higgsfield.ai"
         )
         sys.exit(1)
 
-    client = HiggsfieldClient(api_key=api_key)
-
-    # Step 1 — discover designs
+    cfg = apply_cli_overrides(load_config(args.config), args)
     designs = discover_designs(cfg["input_dir"], cfg["image_extensions"])
+
     if not designs:
-        log.error("No designs found. Check your input directory.")
+        log.error("No designs found in '%s'.", cfg["input_dir"])
         sys.exit(1)
 
-    # Optional filter: process only one design
     if args.design:
         designs = [d for d in designs if d["name"] == args.design]
         if not designs:
@@ -236,37 +214,48 @@ def main() -> None:
 
     log.info("Starting workflow for %d design(s)…", len(designs))
 
-    # Step 2–8 — process each design folder in order
     for design in tqdm(designs, desc="Designs", unit="design"):
         try:
-            process_design(design, cfg, client)
+            process_design(design, cfg)
         except Exception as exc:
-            log.error("Failed to process '%s': %s", design["name"], exc)
+            log.error("Failed on '%s': %s", design["name"], exc, exc_info=True)
             log.info("Continuing with next design…")
 
-    log.info("Workflow complete. Check the '%s' directory.", cfg["output_dir"])
+    log.info("All done. Results in '%s/'", cfg["output_dir"])
 
 
 # ---------------------------------------------------------------------------
-# Utilities
+# Helpers
 # ---------------------------------------------------------------------------
 
-def _ext_from_url(url: str) -> str:
-    """Extract file extension from URL, defaulting to .jpg."""
-    path = url.split("?")[0]
-    ext = Path(path).suffix.lower()
-    return ext if ext in {".jpg", ".jpeg", ".png", ".webp"} else ".jpg"
+def _extract_urls(result: dict) -> list[str]:
+    """Pull image URLs out of any Higgsfield response shape."""
+    if isinstance(result, dict):
+        for key in ("images", "output_urls", "outputs", "results"):
+            val = result.get(key)
+            if isinstance(val, list):
+                # Each element may be a dict with a 'url' key or a plain string
+                urls = []
+                for item in val:
+                    if isinstance(item, dict):
+                        urls.append(item.get("url") or item.get("image_url") or "")
+                    elif isinstance(item, str):
+                        urls.append(item)
+                return [u for u in urls if u]
+        # Fallback: single image
+        for key in ("image", "url", "image_url", "output"):
+            if result.get(key):
+                return [result[key]]
+    return []
 
 
-def _safe_filename(text: str) -> str:
-    """Convert a pose description into a safe filename fragment."""
-    return (
-        text.lower()
-        .replace(" ", "_")
-        .replace(",", "")
-        .replace("/", "_")
-        [:40]
-    )
+def _ext(url: str) -> str:
+    suffix = Path(url.split("?")[0]).suffix.lower()
+    return suffix if suffix in {".jpg", ".jpeg", ".png", ".webp"} else ".jpg"
+
+
+def _safe_name(text: str) -> str:
+    return text.lower().replace(" ", "_").replace(",", "").replace("/", "_")[:40]
 
 
 if __name__ == "__main__":

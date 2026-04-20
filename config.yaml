@@ -12,7 +12,6 @@
 input_dir: "tshirts"
 
 # Root directory where all generated output is saved.
-# A sub-folder matching the design folder name is created automatically.
 output_dir: "output"
 
 # Supported image extensions (case-insensitive).
@@ -23,37 +22,40 @@ image_extensions:
   - ".webp"
 
 # ---------------------------------------------------------------
-# Step 4 — Prompt for the initial garment-on-model generation
+# Step 4/5 — Base model generation (garment on model)
+#
+# application: Higgsfield model path shown in your cloud dashboard.
+#   Known working:  bytedance/seedream/v4/text-to-image
+#   Fashion try-on: check https://cloud.higgsfield.ai for the exact
+#                   application name for Fashion Factory / Outfit Shot.
 # ---------------------------------------------------------------
+base_model:
+  application: "bytedance/seedream/v4/text-to-image"
+  arguments:
+    resolution: "2K"
+    aspect_ratio: "2:3"
+
 generation_prompt: >
-  A professional fashion model wearing the t-shirt, studio lighting,
-  clean white background, full body shot, high quality, photorealistic
-
-generation_negative_prompt: >
-  blurry, low quality, distorted, watermark, text, logo
-
-# How many base model images to generate per design (step 5)
-num_base_images: 1
+  Professional fashion model wearing an olive green graphic t-shirt with
+  MONARCH print, studio photography, clean white background, full body shot,
+  high quality, photorealistic, sharp details
 
 # ---------------------------------------------------------------
-# Step 7 — Poses to generate from the base model image
+# Step 7 — Pose variations
 # ---------------------------------------------------------------
-poses:
-  - "front view, standing straight"
-  - "side view, walking pose"
-  - "back view, standing"
-  - "three-quarter view, casual stance"
-  - "sitting, relaxed pose"
+pose_model:
+  application: "bytedance/seedream/v4/text-to-image"
+  arguments:
+    resolution: "2K"
+    aspect_ratio: "2:3"
 
 pose_prompt: >
-  Professional fashion photography, studio lighting, clean background,
-  high quality, photorealistic
+  Professional fashion photography, studio lighting, clean white background,
+  high quality, photorealistic, same outfit
 
-pose_negative_prompt: >
-  blurry, low quality, distorted, watermark
-
-# ---------------------------------------------------------------
-# API / job settings
-# ---------------------------------------------------------------
-poll_interval_seconds: 5
-job_timeout_seconds: 300
+poses:
+  - "front view, standing straight, arms at sides"
+  - "side view, walking pose, dynamic"
+  - "back view, standing"
+  - "three-quarter view, casual confident stance"
+  - "sitting on white stool, relaxed pose"
