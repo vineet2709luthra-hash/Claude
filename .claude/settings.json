@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "ollama": {
+      "command": "python3",
+      "args": ["ollama_mcp_server.py"],
+      "cwd": "${workspaceFolder}",
+      "env": {}
+    }
+  }
+}
