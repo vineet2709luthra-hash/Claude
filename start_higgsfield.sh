@@ -1,5 +1,15 @@
 #!/bin/bash
-# Opens Higgsfield AI in Chrome
+# Opens Higgsfield AI in Chrome with API key from .env
+
+ENV_FILE="$(dirname "$0")/.env"
+if [[ -f "$ENV_FILE" ]]; then
+    export $(grep -v '^#' "$ENV_FILE" | xargs)
+fi
+
+if [[ -z "$HIGGSFIELD_API_KEY" ]]; then
+    echo "Error: HIGGSFIELD_API_KEY not set. Add it to .env"
+    exit 1
+fi
 
 URL="https://higgsfield.ai"
 
