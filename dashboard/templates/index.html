@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Seller AI Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+    .header { background: #1e293b; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334155; }
+    .header h1 { font-size: 1.25rem; font-weight: 700; color: #f1f5f9; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding: 24px; }
+    .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+    .card .label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+    .card .value { font-size: 2rem; font-weight: 700; color: #f1f5f9; }
+    .card .sub { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+    .card.green .value { color: #22c55e; }
+    .card.yellow .value { color: #f59e0b; }
+    .card.red .value { color: #ef4444; }
+    .section { padding: 0 24px 24px; }
+    .section h2 { font-size: 1rem; font-weight: 600; color: #94a3b8; margin-bottom: 12px; text-transform: uppercase; letter-spacing: .05em; }
+    .table-wrap { background: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th { background: #0f172a; padding: 10px 16px; text-align: left; color: #64748b; font-weight: 500; }
+    td { padding: 10px 16px; border-top: 1px solid #1e293b; color: #cbd5e1; }
+    tr:hover td { background: #1a2744; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 0.7rem; font-weight: 600; }
+    .badge.amazon { background: #f59e0b22; color: #f59e0b; }
+    .badge.myntra { background: #ec489922; color: #ec4899; }
+    .badge.pending { background: #64748b22; color: #94a3b8; }
+    .badge.confirmed { background: #22c55e22; color: #22c55e; }
+    .badge.shipped { background: #3b82f622; color: #3b82f6; }
+    .badge.delivered { background: #22c55e33; color: #86efac; }
+    .badge.cancelled { background: #ef444422; color: #ef4444; }
+    .agents { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding: 0 24px 24px; }
+    .agent-card { background: #1e293b; border-radius: 10px; padding: 14px; border: 1px solid #334155; text-align: center; }
+    .agent-card .agent-name { font-size: 0.8rem; color: #94a3b8; margin-top: 6px; }
+    .agent-card .agent-icon { font-size: 1.5rem; }
+    .agent-card .agent-status { font-size: 0.7rem; color: #22c55e; margin-top: 4px; }
+    .refresh { color: #3b82f6; font-size: 0.8rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🛍️ Seller AI — Command Center</h1>
+    <div>
+      <span class="status-dot"></span>
+      <span style="font-size:.85rem;color:#94a3b8;">All agents running</span>
+      <span class="refresh" onclick="location.reload()" style="margin-left:16px;">↻ Refresh</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card green">
+      <div class="label">Today's Orders</div>
+      <div class="value">{{ stats.today_orders }}</div>
+      <div class="sub">Amazon: {{ stats.amazon_orders }} | Myntra: {{ stats.myntra_orders }}</div>
+    </div>
+    <div class="card green">
+      <div class="label">Today's Revenue</div>
+      <div class="value">₹{{ stats.today_revenue }}</div>
+      <div class="sub">All platforms</div>
+    </div>
+    <div class="card {% if stats.pending_orders > 10 %}red{% elif stats.pending_orders > 5 %}yellow{% else %}green{% endif %}">
+      <div class="label">Pending Orders</div>
+      <div class="value">{{ stats.pending_orders }}</div>
+      <div class="sub">Need fulfillment</div>
+    </div>
+    <div class="card {% if stats.low_stock > 5 %}red{% elif stats.low_stock > 0 %}yellow{% else %}green{% endif %}">
+      <div class="label">Low Stock Items</div>
+      <div class="value">{{ stats.low_stock }}</div>
+      <div class="sub">Below reorder threshold</div>
+    </div>
+    <div class="card">
+      <div class="label">Open Returns</div>
+      <div class="value">{{ stats.open_returns }}</div>
+      <div class="sub">Pending review</div>
+    </div>
+    <div class="card">
+      <div class="label">Unanswered Messages</div>
+      <div class="value">{{ stats.unanswered_messages }}</div>
+      <div class="sub">Customer queries</div>
+    </div>
+  </div>
+
+  <div style="padding:0 24px 8px;"><h2 style="font-size:1rem;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;">AI Agents Status</h2></div>
+  <div class="agents">
+    {% for agent in agents %}
+    <div class="agent-card">
+      <div class="agent-icon">{{ agent.icon }}</div>
+      <div class="agent-name">{{ agent.name }}</div>
+      <div class="agent-status">● {{ agent.status }}</div>
+      <div style="font-size:0.65rem;color:#475569;margin-top:2px;">{{ agent.last_run }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="section">
+    <h2>Recent Orders</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Order ID</th>
+            <th>Platform</th>
+            <th>Product</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in orders %}
+          <tr>
+            <td style="font-family:monospace;font-size:0.8rem;">{{ order.id[:16] }}...</td>
+            <td><span class="badge {{ order.platform }}">{{ order.platform.upper() }}</span></td>
+            <td>{{ order.product_name[:30] if order.product_name else "—" }}</td>
+            <td>₹{{ "%.0f"|format(order.total_amount or 0) }}</td>
+            <td><span class="badge {{ order.status }}">{{ order.status }}</span></td>
+            <td style="color:#64748b;font-size:0.75rem;">{{ order.created_at.strftime("%d %b %H:%M") if order.created_at else "—" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="text-align:center;color:#475569;padding:24px;">No orders yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Agent Activity Log</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Agent</th><th>Action</th><th>Details</th><th>Status</th><th>Time</th></tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td style="color:#818cf8;font-size:0.8rem;">{{ log.agent_name }}</td>
+            <td>{{ log.action }}</td>
+            <td style="color:#64748b;font-size:0.8rem;">{{ log.details[:60] if log.details else "—" }}</td>
+            <td>
+              <span class="badge {% if log.status == 'success' %}confirmed{% elif log.status == 'warning' %}amazon{% else %}cancelled{% endif %}">
+                {{ log.status }}
+              </span>
+            </td>
+            <td style="color:#64748b;font-size:0.75rem;">{{ log.created_at.strftime("%d %b %H:%M") if log.created_at else "—" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" style="text-align:center;color:#475569;padding:24px;">No activity yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
